@@ -59,6 +59,16 @@ func Init(root string, force bool) error {
 		}
 	}
 	path := filepath.Join(dir, "config.json")
+	// Guard against symlinked config.json/.gitignore inside a real .agentproof
+	// directory: os.Stat follows symlinks and would silently pass, but
+	// safefile.Write refuses symlinks with a non-ErrUsage error (exit 3).
+	// Surface the condition as ErrUsage (exit 2) so the user gets a clear
+	// fixable-invocation message instead of a dead end.
+	for _, p := range []string{path, filepath.Join(dir, ".gitignore")} {
+		if info, err := os.Lstat(p); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s is a symlink; remove it and re-run agentproof init", apperr.ErrUsage, p)
+		}
+	}
 	if _, err := os.Stat(path); err == nil && !force {
 		return fmt.Errorf("%w: already initialized; use --force to replace the configuration", apperr.ErrUsage)
 	}

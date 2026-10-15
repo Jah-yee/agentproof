@@ -205,3 +205,49 @@ func TestLoadValidatesSchemaVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestInitRejectsSymlinkedConfigFile(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	// Create a real .agentproof directory
+	if err := os.MkdirAll(filepath.Join(root, DirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Create a symlinked config.json inside it
+	outside := filepath.Join(root, "outside-config.json")
+	if err := os.WriteFile(outside, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, DirName, "config.json")); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+	if err := Init(root, false); err == nil {
+		t.Fatal("init must refuse a symlinked config.json")
+	} else if !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("init must return ErrUsage for symlinked config.json, got: %v", err)
+	}
+	// Ensure config.json was not written through the symlink
+	if data, err := os.ReadFile(outside); err == nil && string(data) != "{}" {
+		t.Fatalf("init must not write through a symlinked config.json; outside file content = %q", string(data))
+	}
+}
+
+func TestInitRejectsSymlinkedGitignore(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, DirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "outside-gitignore")
+	if err := os.WriteFile(outside, []byte("# ignore"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, DirName, ".gitignore")); err != nil {
+		t.Skipf("os.Symlink unavailable: %v", err)
+	}
+	if err := Init(root, false); err == nil {
+		t.Fatal("init must refuse a symlinked .gitignore")
+	} else if !errors.Is(err, apperr.ErrUsage) {
+		t.Fatalf("init must return ErrUsage for symlinked .gitignore, got: %v", err)
+	}
+}
